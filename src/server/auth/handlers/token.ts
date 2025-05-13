@@ -2,7 +2,6 @@ import { z } from "zod";
 import express, { RequestHandler } from "express";
 import { OAuthServerProvider } from "../provider.js";
 import cors from "cors";
-import { verifyChallenge } from "pkce-challenge";
 import { authenticateClient } from "../middleware/clientAuth.js";
 import { rateLimit, Options as RateLimitOptions } from "express-rate-limit";
 import { allowedMethods } from "../middleware/allowedMethods.js";
@@ -12,8 +11,10 @@ import {
   UnsupportedGrantTypeError,
   ServerError,
   TooManyRequestsError,
-  OAuthError
+  OAuthError,
+  InvalidTokenError
 } from "../errors.js";
+import { validateCodeVerifier } from '../../../pkce.js';
 
 export type TokenHandlerOptions = {
   provider: OAuthServerProvider;
@@ -22,6 +23,7 @@ export type TokenHandlerOptions = {
    * Set to false to disable rate limiting for this endpoint.
    */
   rateLimit?: Partial<RateLimitOptions> | false;
+  skipLocalPkceValidation?: boolean;
 };
 
 const TokenRequestSchema = z.object({
@@ -52,7 +54,7 @@ export function tokenHandler({ provider, rateLimit: rateLimitConfig }: TokenHand
   if (rateLimitConfig !== false) {
     router.use(rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 50, // 50 requests per windowMs 
+      max: 50, // 50 requests per windowMs
       standardHeaders: true,
       legacyHeaders: false,
       message: new TooManyRequestsError('You have exceeded the rate limit for token requests').toResponseObject(),
@@ -92,12 +94,13 @@ export function tokenHandler({ provider, rateLimit: rateLimitConfig }: TokenHand
 
           const skipLocalPkceValidation = provider.skipLocalPkceValidation;
 
-          // Perform local PKCE validation unless explicitly skipped 
+          // Perform local PKCE validation unless explicitly skipped
           // (e.g. to validate code_verifier in upstream server)
           if (!skipLocalPkceValidation) {
             const codeChallenge = await provider.challengeForAuthorizationCode(client, code);
-            if (!(await verifyChallenge(code_verifier, codeChallenge))) {
-              throw new InvalidGrantError("code_verifier does not match the challenge");
+            const isValid = await validateCodeVerifier(code_verifier, codeChallenge);
+            if (!isValid) {
+              throw new InvalidGrantError('Invalid code verifier');
             }
           }
 

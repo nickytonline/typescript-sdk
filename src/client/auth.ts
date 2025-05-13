@@ -1,11 +1,11 @@
-import pkceChallenge from "pkce-challenge";
+import { generateCodeVerifier, generateCodeChallenge } from '../pkce.js';
 import { LATEST_PROTOCOL_VERSION } from "../types.js";
 import type { OAuthClientMetadata, OAuthClientInformation, OAuthTokens, OAuthMetadata, OAuthClientInformationFull } from "../shared/auth.js";
 import { OAuthClientInformationFullSchema, OAuthMetadataSchema, OAuthTokensSchema } from "../shared/auth.js";
 
 /**
  * Implements an end-to-end OAuth client to be used with one MCP server.
- * 
+ *
  * This client relies upon a concept of an authorized "session," the exact
  * meaning of which is application-defined. Tokens, authorization codes, and
  * code verifiers should not cross different sessions.
@@ -32,7 +32,7 @@ export interface OAuthClientProvider {
    * If implemented, this permits the OAuth client to dynamically register with
    * the server. Client information saved this way should later be read via
    * `clientInformation()`.
-   * 
+   *
    * This method is not required to be implemented if client information is
    * statically known (e.g., pre-registered).
    */
@@ -78,7 +78,7 @@ export class UnauthorizedError extends Error {
 
 /**
  * Orchestrates the full auth flow with a server.
- * 
+ *
  * This can be used as a single entry point for all authorization functionality,
  * instead of linking together the other lower-level functions in this module.
  */
@@ -237,9 +237,8 @@ export async function startAuthorization(
   }
 
   // Generate PKCE challenge
-  const challenge = await pkceChallenge();
-  const codeVerifier = challenge.code_verifier;
-  const codeChallenge = challenge.code_challenge;
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = await generateCodeChallenge(codeVerifier);
 
   authorizationUrl.searchParams.set("response_type", responseType);
   authorizationUrl.searchParams.set("client_id", clientInformation.client_id);
@@ -249,7 +248,7 @@ export async function startAuthorization(
     codeChallengeMethod,
   );
   authorizationUrl.searchParams.set("redirect_uri", String(redirectUrl));
-  
+
   if (scope) {
     authorizationUrl.searchParams.set("scope", scope);
   }
@@ -419,4 +418,32 @@ export async function registerClient(
   }
 
   return OAuthClientInformationFullSchema.parse(await response.json());
+}
+
+export interface AuthorizationUrlOptions {
+  clientId: string;
+  redirectUri: string;
+  scope?: string;
+  state?: string;
+  responseType?: string;
+}
+
+export async function getAuthorizationUrl(options: AuthorizationUrlOptions): Promise<string> {
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+  const authorizationUrl = new URL('/oauth/authorize', options.redirectUri);
+  authorizationUrl.searchParams.set('client_id', options.clientId);
+  authorizationUrl.searchParams.set('redirect_uri', options.redirectUri);
+  if (options.scope) {
+    authorizationUrl.searchParams.set('scope', options.scope);
+  }
+  if (options.state) {
+    authorizationUrl.searchParams.set('state', options.state);
+  }
+  authorizationUrl.searchParams.set('response_type', options.responseType || 'code');
+  authorizationUrl.searchParams.set('code_challenge', codeChallenge);
+  authorizationUrl.searchParams.set('code_challenge_method', 'S256');
+
+  return authorizationUrl.toString();
 }

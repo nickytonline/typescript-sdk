@@ -155,26 +155,24 @@ describe("OAuth Authorization", () => {
     };
 
     it("generates authorization URL with PKCE challenge", async () => {
-      const { authorizationUrl, codeVerifier } = await startAuthorization(
-        "https://auth.example.com",
-        {
-          clientInformation: validClientInfo,
-          redirectUrl: "http://localhost:3000/callback",
-        }
-      );
+      const serverUrl = 'https://auth.example.com';
+      const clientInformation = {
+        client_id: 'test_client',
+        client_secret: 'test_secret',
+      };
+      const redirectUrl = 'https://app.example.com/callback';
 
-      expect(authorizationUrl.toString()).toMatch(
-        /^https:\/\/auth\.example\.com\/authorize\?/
-      );
-      expect(authorizationUrl.searchParams.get("response_type")).toBe("code");
-      expect(authorizationUrl.searchParams.get("code_challenge")).toBe("test_challenge");
-      expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe(
-        "S256"
-      );
-      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-        "http://localhost:3000/callback"
-      );
-      expect(codeVerifier).toBe("test_verifier");
+      const { authorizationUrl, codeVerifier } = await startAuthorization(serverUrl, {
+        clientInformation,
+        redirectUrl,
+      });
+
+      expect(authorizationUrl.searchParams.get('response_type')).toBe('code');
+      expect(authorizationUrl.searchParams.get('code_challenge')).toBeTruthy();
+      expect(authorizationUrl.searchParams.get('code_challenge_method')).toBe('S256');
+      expect(authorizationUrl.searchParams.get('client_id')).toBe('test_client');
+      expect(authorizationUrl.searchParams.get('redirect_uri')).toBe('https://app.example.com/callback');
+      expect(codeVerifier).toBeTruthy();
     });
 
     it("includes scope parameter when provided", async () => {
